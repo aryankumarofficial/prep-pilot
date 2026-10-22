@@ -1,6 +1,6 @@
 import { ArrowRight, Check, Compass, Plane, Sparkles } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { errorMessage, post } from "../api";
 import type { User } from "../types";
@@ -8,7 +8,6 @@ import { Button, ErrorNotice } from "../components/ui";
 
 export default function AuthPage() {
   const { user, accept } = useAuth();
-  const navigate = useNavigate();
   const [register, setRegister] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -28,14 +27,14 @@ export default function AuthPage() {
         payload,
       );
       accept(result);
-      navigate(register ? "/settings?welcome=1" : "/", { replace: true });
     } catch (error) {
       setError(errorMessage(error));
     } finally {
       setBusy(false);
     }
   }
-  if (user) return <Navigate to="/" replace />;
+  if (user)
+    return <Navigate to={register ? "/settings?welcome=1" : "/"} replace />;
   return (
     <div className="auth-layout">
       <div className="auth-story">
