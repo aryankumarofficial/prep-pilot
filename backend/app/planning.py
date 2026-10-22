@@ -85,7 +85,7 @@ def schedule(
     for topic in order_topics(topics):
         if topic.relevance <= 0 and not any(topic.id in t.prerequisites for t in topics):
             continue
-        score = f"{topic.score:g}% on recent assessments" if topic.score is not None else "not yet assessed"
+        score = f"{topic.score:g}% accuracy on answered questions" if topic.score is not None else "not yet assessed"
         reason = (
             f"{topic.name}: {score}; role relevance {topic.relevance:.0%}. Prerequisites are scheduled first."
         )

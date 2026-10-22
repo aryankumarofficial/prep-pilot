@@ -130,6 +130,7 @@ test("a student can assess, plan, revisit saved progress and practice an intervi
   await expect(
     page.getByRole("heading", { name: "A plan that moves with you." }),
   ).toBeVisible();
+  await expect(page.locator("#navigation")).not.toBeInViewport();
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,

@@ -97,6 +97,7 @@ export type Attempt = {
   started_at: string;
   expires_at: string;
   server_now: string;
+  plan_update_version: number | null;
   score: number | null;
   correct_count: number | null;
   total_count: number;

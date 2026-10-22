@@ -18,7 +18,11 @@ def skill_summary(db: Session, user_id: str) -> list[dict]:
     questions = db.execute(
         select(AttemptQuestion.question_version_id, AttemptQuestion.snapshot)
         .join(Attempt, Attempt.id == AttemptQuestion.attempt_id)
-        .where(Attempt.user_id == user_id, Attempt.status != "in_progress")
+        .where(
+            Attempt.user_id == user_id,
+            Attempt.status != "in_progress",
+            AttemptQuestion.selected_option.is_not(None),
+        )
     ).all()
     unique = defaultdict(set)
     for version_id, snapshot in questions:

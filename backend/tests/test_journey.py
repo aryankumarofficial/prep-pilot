@@ -160,3 +160,27 @@ def test_validation_does_not_echo_password(client):
         "/api/v1/auth/register", json={"email": "invalid", "password": secret, "full_name": "X"}
     )
     assert response.status_code == 422 and secret not in response.text
+
+
+def test_skipped_questions_do_not_inflate_skill_coverage(client):
+    attempt = start(client)
+    first = attempt["questions"][0]
+    client.post(
+        f"/api/v1/attempts/{attempt['id']}/answers", json={"question_id": first["id"], "selected_option": "a"}
+    )
+    result = client.post(f"/api/v1/attempts/{attempt['id']}/submit").json()
+    assert result["plan_update_version"] == 1
+    skills = client.get("/api/v1/skills").json()
+    measured = [s for s in skills if s["score"] is not None]
+    assert len(measured) == 1 and measured[0]["id"] == first["skill_id"]
+    assert measured[0]["unique_questions"] == 1
+    assert client.get("/api/v1/dashboard/summary").json()["stats"]["coverage"] == 8
+
+
+def test_empty_submission_saves_test_result_without_inventing_skill_evidence(client):
+    attempt = start(client)
+    result = client.post(f"/api/v1/attempts/{attempt['id']}/submit")
+    assert result.status_code == 200
+    assert result.json()["score"] == 0 and result.json()["plan_update_version"] is None
+    assert all(s["score"] is None for s in client.get("/api/v1/skills").json())
+    assert client.get("/api/v1/roadmaps/current").json() is None

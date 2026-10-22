@@ -22,6 +22,10 @@ def test_concurrent_postgres_submissions(client, application):
     if application.state.engine.dialect.name != "postgresql":
         pytest.skip("Row-lock concurrency is verified against PostgreSQL in CI")
     attempt = start(client)
+    client.post(
+        f"/api/v1/attempts/{attempt['id']}/answers",
+        json={"question_id": attempt["questions"][0]["id"], "selected_option": "a"},
+    )
     cookies, headers = dict(client.cookies), dict(client.headers)
 
     def submit():

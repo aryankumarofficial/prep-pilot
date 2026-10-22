@@ -81,6 +81,7 @@ Resume/JD analysis validates catalogue IDs and exact source snippets. Resume men
 
 ## Scheduling rules
 
+- Unanswered items lower the overall test score. Skill accuracy and coverage use saved answers only; a blank attempt saves a result without inventing skill evidence.
 - Recent skill evidence uses the latest three test results with relative weights 3, 2 and 1. Distinct-question coverage is shown; the starter bank is not statistically calibrated.
 - Priority is `0.50 × normalized_gap + 0.35 × role_relevance + 0.15 × prerequisite_urgency`. Topological ordering also enforces prerequisites.
 - An applied JD promotes explicit requirements and their prerequisites while retaining general role foundations.
@@ -114,4 +115,4 @@ Students can delete a resume and its derived analysis. Schedule `python -m app.m
 
 ## Before a public pilot
 
-Add email verification/password recovery, account export/deletion, interview/JD retention, a larger independently reviewed bank, an editorial admin UI, additional roles, stronger file isolation and wider accessibility/load testing. Voice, arbitrary code execution, hiring predictions, company scraping, billing and college-wide administration are outside this MVP. This implementation has not been publicly deployed or merged to `main`.
+Add email verification/password recovery, account export/deletion, interview/JD retention, a larger independently reviewed bank, an editorial admin UI, additional roles, stronger file isolation and wider accessibility/load testing. Voice, arbitrary code execution, hiring predictions, company scraping, billing and college-wide administration are outside this MVP. Follow the deployment checklist before inviting students.

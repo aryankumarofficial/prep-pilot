@@ -42,7 +42,7 @@ The first release targets a college demonstration with one role, Java Developer.
 - [x] Model error/invalid-output contract tests
 - [x] Frontend typecheck, component checks, production build
 - [x] PostgreSQL CI, container configuration, setup and demo instructions
-- [ ] Browser verification of core journey and small-screen layout
+- [x] Browser verification of core journey and small-screen layout
 
 ## Later releases
 Password recovery and email verification need an email provider before a public pilot. Add an editorial admin interface, a larger independently reviewed question bank, calibrated assessments, more roles, weekly availability/exclusions, and public-pilot retention/consent operations. Voice, arbitrary code execution, college administration, billing, company scraping, and multi-agent workflows remain outside this MVP.
@@ -52,4 +52,4 @@ Register a student, set a deadline and time budget, complete a diagnostic, open 
 
 ## Verification status
 
-Local API/algorithm/contract checks and frontend component checks pass. Migration upgrade/downgrade/schema checks pass on temporary SQLite. PostgreSQL and full browser validation run in GitHub Actions; managed browser preview cannot run the Python API in this execution environment. Live model quality/availability requires operator-provided AI configuration and synthetic test data.
+PostgreSQL migrations, constraints, transaction failure handling and concurrent submission are covered by CI. Frontend component tests and production builds pass. The complete browser journey has passed against PostgreSQL at desktop and phone widths. CI evidence is available in the pull request checks, including screenshots and traces. Skipped questions remain distinct from measured skill evidence. Live model quality/availability requires an operator-provided key/model and synthetic evaluation data.

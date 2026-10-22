@@ -29,7 +29,9 @@ def make_plan(db, user, trigger_key: str, reason: str):
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     scores = skill_summary(db, user.id)
     if not any(s["score"] is not None for s in scores):
-        raise HTTPException(409, "Complete a diagnostic assessment before creating your plan.")
+        raise HTTPException(
+            409, "Complete an assessment with at least one saved answer before creating your plan."
+        )
     roadmap = db.scalar(select(Roadmap).where(Roadmap.user_id == user.id))
     if roadmap is None:
         roadmap = Roadmap(user_id=user.id)

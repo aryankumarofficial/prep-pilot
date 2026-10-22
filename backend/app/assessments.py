@@ -15,7 +15,7 @@ from .models import (
     Roadmap,
     RoadmapTask,
 )
-from .models import SkillEvidence, User
+from .models import RoadmapVersion, SkillEvidence, User
 from .roadmaps import make_plan
 from .schemas import SaveAnswer, StartAttempt
 from .security import DB, Student, owned
@@ -26,6 +26,15 @@ router = APIRouter(prefix="/api/v1", tags=["Assessments"])
 def attempt_payload(db, attempt):
     assessment = db.get(Assessment, attempt.assessment_id)
     finished = attempt.status != "in_progress"
+    plan_update = (
+        db.scalar(
+            select(RoadmapVersion.version)
+            .join(Roadmap)
+            .where(Roadmap.user_id == attempt.user_id, RoadmapVersion.trigger_key == f"attempt:{attempt.id}")
+        )
+        if finished
+        else None
+    )
     questions = []
     for q in db.scalars(
         select(AttemptQuestion)
@@ -57,6 +66,7 @@ def attempt_payload(db, attempt):
         "started_at": aware(attempt.started_at),
         "expires_at": aware(attempt.expires_at),
         "server_now": utcnow(),
+        "plan_update_version": plan_update,
         "score": attempt.score,
         "correct_count": attempt.correct_count,
         "total_count": attempt.total_count,
@@ -196,6 +206,8 @@ def submit(attempt_id: str, db: DB, user: Student):
     attempt.submitted_at = now
     by_skill = defaultdict(lambda: [0, 0])
     for q in db.scalars(select(AttemptQuestion).where(AttemptQuestion.attempt_id == attempt.id)):
+        if q.selected_option is None:
+            continue  # Omitted items lower the test score, but are not measured skill evidence.
         by_skill[q.snapshot["skill_id"]][0] += int(q.selected_option == q.snapshot["correct_option"])
         by_skill[q.snapshot["skill_id"]][1] += 1
     attempt.correct_count = sum(values[0] for values in by_skill.values())
@@ -212,7 +224,7 @@ def submit(attempt_id: str, db: DB, user: Student):
             )
         )
     roadmap = db.scalar(select(Roadmap).where(Roadmap.user_id == user.id))
-    if roadmap:
+    if roadmap and by_skill:
         task = db.scalar(
             select(RoadmapTask)
             .where(
@@ -226,10 +238,11 @@ def submit(attempt_id: str, db: DB, user: Student):
             task.completed_at = now
     db.flush()
     assessment = db.get(Assessment, attempt.assessment_id)
-    make_plan(
-        db,
-        user,
-        f"attempt:{attempt.id}",
-        f"{assessment.title} completed at {attempt.score:g}%. Future tasks reprioritized using assessment evidence.",
-    )
+    if by_skill:
+        make_plan(
+            db,
+            user,
+            f"attempt:{attempt.id}",
+            f"{assessment.title} completed at {attempt.score:g}%. Future tasks reprioritized using answered-question evidence.",
+        )
     return attempt_payload(db, attempt)

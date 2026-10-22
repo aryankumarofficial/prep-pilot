@@ -51,7 +51,9 @@ export default function Dashboard() {
             <h2>{data.next_action.title}</h2>
             <p>{data.next_action.description}</p>
             <Link to={data.next_action.path} className="button primary">
-              {stats.assessments ? "Open my roadmap" : "Take my diagnostic"}
+              {data.next_action.path === "/roadmap"
+                ? "Open my roadmap"
+                : "Take my diagnostic"}
               <ArrowRight size={17} />
             </Link>
           </div>

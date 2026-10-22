@@ -109,7 +109,9 @@ export default function AttemptPage() {
           eyebrow="ONE MORE STEP FORWARD"
           title="Your assessment, explained."
         >
-          Your results have been saved and your study plan has been updated.
+          {data.plan_update_version
+            ? "Your results have been saved and your study plan has been updated."
+            : "Your result is saved. Answer questions in another assessment to establish skill evidence and update your plan."}
         </PageHeader>
         <Panel className="result-summary">
           <div className="result-ring">
@@ -127,8 +129,13 @@ export default function AttemptPage() {
                 ? " · Time elapsed; saved answers were scored."
                 : ""}
             </p>
-            <Link to="/roadmap" className="button primary">
-              See my updated plan
+            <Link
+              to={data.plan_update_version ? "/roadmap" : "/assessments"}
+              className="button primary"
+            >
+              {data.plan_update_version
+                ? "See my updated plan"
+                : "Try another assessment"}
               <ArrowRight size={16} />
             </Link>
           </div>
