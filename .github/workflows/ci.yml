@@ -5,9 +5,13 @@ on:
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: preppilot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     services:
       postgres:
         image: postgres:16
@@ -37,6 +41,7 @@ jobs:
       - run: pytest -q
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
@@ -52,6 +57,7 @@ jobs:
       - run: npm run build
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     services:
       postgres:
         image: postgres:16
@@ -80,7 +86,7 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps --only-shell chromium
         working-directory: frontend
       - run: npm run test:e2e
         working-directory: frontend

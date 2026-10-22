@@ -28,7 +28,9 @@ def database(request: Request):
             raise
 
 
-DB = Annotated[Session, Depends(database)]
+# Commit or roll back before any successful response is sent to the browser.
+# Request-scoped cleanup runs too late to report a failed commit correctly.
+DB = Annotated[Session, Depends(database, scope="function")]
 
 
 def rate_limit(request: Request, namespace: str, subject: str, limit: int, seconds: int):
