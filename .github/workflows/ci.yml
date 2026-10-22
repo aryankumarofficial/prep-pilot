@@ -9,6 +9,27 @@ concurrency:
   group: preppilot-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build application containers
+        run: docker compose build
+      - name: Start database, migrations and application
+        run: docker compose up -d --no-build
+      - name: Verify catalogue readiness and built frontend
+        run: |
+          curl --fail --show-error --retry 30 --retry-delay 2 --retry-connrefused --retry-max-time 120 --max-time 10 http://localhost:8000/health/ready
+          curl --fail --show-error --silent http://localhost:8000/ > /tmp/preppilot-index.html
+          rg '<title>PrepPilot AI' /tmp/preppilot-index.html
+          rg '/assets/.*\.js' /tmp/preppilot-index.html
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Stop containers and remove disposable CI volumes
+        if: always()
+        run: docker compose down -v
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 12
