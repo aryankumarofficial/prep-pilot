@@ -24,6 +24,19 @@ docker compose up --build
 
 Open **http://localhost:8000** and register a local student account. Compose starts PostgreSQL, runs migrations and the repeatable catalogue seed, then serves the built frontend and API together. Volumes retain database records and private uploads. Compose defaults are for local development.
 
+### Slow or interrupted package downloads
+
+If a build reports `ReadTimeoutError` for `files.pythonhosted.org`, the package download stalled before the application could start. The image uses pip 26.2.2 with a 120-second socket timeout, 10 connection retries and 10 interrupted-download resume/restart attempts. BuildKit keeps pip's download cache between builds without adding it to the image. Keep that cache when retrying a failed build.
+
+For a slower connection, increase the build timeout for both application services:
+
+```bash
+docker compose build --build-arg PIP_DEFAULT_TIMEOUT=300
+docker compose up -d
+```
+
+These build arguments apply inside Docker; changing pip in your host virtual environment does not change the image. An ongoing network outage or blocked access to PyPI still needs to be resolved on the host or Docker Desktop network.
+
 ## Development setup
 
 Requirements: **Node 22.12+**, **Python 3.11+** (3.12 tested), PostgreSQL 16+.
@@ -101,7 +114,7 @@ npm --prefix frontend run build
 
 Backend tests default to temporary SQLite databases. For PostgreSQL, set `TEST_DATABASE_URL` to a **disposable database whose name ends in `_test`**. Tests clear its application tables; never point tests at real student data.
 
-GitHub Actions runs PostgreSQL checks, frontend component tests/builds, and Chromium end-to-end checks covering registration, saved/reloaded diagnostics, adaptation, bookmarks, interviews and phone layouts. Screenshots/traces are retained in the `browser-verification` workflow artifact.
+GitHub Actions runs PostgreSQL checks, frontend component tests/builds, Chromium end-to-end checks covering registration, saved/reloaded diagnostics, adaptation, bookmarks, interviews and phone layouts, and a Docker Compose build/startup smoke check. The container check verifies database migrations, catalogue readiness and the served frontend. Screenshots/traces are retained in the `browser-verification` workflow artifact.
 
 For local Playwright runs, build the frontend, migrate/seed a disposable database, configure its backend environment, run `npx playwright install chromium` inside `frontend/`, then `npm run test:e2e`. The config starts the API on Unix. On Windows, start the API yourself and set `PREPPILOT_E2E_URL=http://127.0.0.1:8000`, including that exact origin in `FRONTEND_ORIGINS`.
 
