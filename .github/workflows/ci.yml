@@ -1,0 +1,99 @@
+name: PrepPilot checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: preppilot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: preppilot
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: preppilot_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U preppilot -d preppilot_test" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://preppilot:ci-only@localhost:5432/preppilot_test
+      TEST_DATABASE_URL: postgresql+psycopg://preppilot:ci-only@localhost:5432/preppilot_test
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - run: pip install -r requirements.lock
+      - run: alembic upgrade head
+      - run: python -m app.seed
+      - run: alembic check
+      - run: pytest -q
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: preppilot
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: preppilot_e2e
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U preppilot -d preppilot_e2e" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://preppilot:ci-only@localhost:5432/preppilot_e2e
+      FRONTEND_ORIGINS: '["http://127.0.0.1:8000"]'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: python -m venv backend/.venv
+      - run: backend/.venv/bin/pip install -r backend/requirements.lock
+      - run: .venv/bin/alembic upgrade head && .venv/bin/python -m app.seed
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps --only-shell chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-verification
+          path: |
+            frontend/playwright-report
+            frontend/test-results
