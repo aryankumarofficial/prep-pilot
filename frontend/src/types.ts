@@ -9,6 +9,8 @@ export type User = {
 };
 export type Capabilities = {
   ai_enabled: boolean;
+  ai_status: "ready" | "missing_key" | "missing_model";
+  max_upload_mb: number;
   roles: string[];
   resume_retention_days: number;
   starter_bank: boolean;
@@ -137,7 +139,12 @@ export type Job = {
   resume_id: string | null;
   raw_text: string;
   created_at: string;
-  analysis: { required_skills: Match[]; resume_skills: Match[] } | null;
+  analysis: {
+    required_skills: Match[];
+    resume_skills: Match[];
+    method?: "catalogue" | "ai";
+    analyzed_at?: string;
+  } | null;
 };
 export type Feedback = {
   correctness: number;

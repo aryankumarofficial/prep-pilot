@@ -27,6 +27,8 @@ The first release targets a college demonstration with one role, Java Developer.
 - [x] Bounded PDF/DOCX extraction in a separate process
 - [x] Private file access, deletion and retention maintenance
 - [x] Saved job descriptions and evidence-backed skill mapping
+- [x] Immediate catalogue comparison without AI, saved-resume reassignment and explicit method labels
+- [x] Docker AI environment forwarding, safe configuration status and actionable provider errors
 - [x] OpenRouter structured outputs, semantic validation, quotas, usage metadata
 - [x] Clear unavailable states without substituted AI results
 

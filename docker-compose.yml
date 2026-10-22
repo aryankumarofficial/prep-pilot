@@ -16,19 +16,23 @@ services:
       retries: 15
   migrate:
     build: .
+    env_file: &api-env-files
+      - path: ./backend/.env
+        required: false
+      - path: ./.env
+        required: false
     environment: &api-environment
       DATABASE_URL: postgresql+psycopg://preppilot:${POSTGRES_PASSWORD:-local-dev-only}@db:5432/preppilot
       APP_ENV: development
       FRONTEND_ORIGINS: '["http://localhost:8000"]'
       COOKIE_SECURE: "false"
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
     depends_on:
       db:
         condition: service_healthy
     command: ["sh", "-c", "alembic upgrade head && python -m app.seed"]
   api:
     build: .
+    env_file: *api-env-files
     environment: *api-environment
     ports:
       - "127.0.0.1:8000:8000"

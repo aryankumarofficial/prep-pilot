@@ -87,11 +87,89 @@ def test_invalid_uploads(client, filename, content, mime):
     assert client.get("/api/v1/resumes").json() == []
 
 
-def test_ai_disabled_preserves_draft_and_core_features(client):
+def test_ai_disabled_still_compares_catalogue_skills(client):
     job = create_job(client)
-    assert client.post(f"/api/v1/job-descriptions/{job['id']}/analyze").status_code == 503
+    result = client.post(f"/api/v1/job-descriptions/{job['id']}/analyze")
+    assert result.status_code == 200, result.text
+    assert result.json()["analysis"]["method"] == "catalogue"
+    assert {match["skill_id"] for match in result.json()["analysis"]["required_skills"]} >= {
+        "java-types",
+        "sql-joins",
+    }
+    assert result.json()["analysis"]["resume_skills"] == []
+    assert (
+        client.post(f"/api/v1/job-descriptions/{job['id']}/analyze", json={"method": "ai"}).status_code == 503
+    )
     assert client.get("/api/v1/job-descriptions").json()[0]["id"] == job["id"]
     assert client.get("/api/v1/assessments").status_code == 200
+
+
+def test_catalogue_comparison_persists_resume_evidence_and_can_change_resume(client):
+    upload = client.post(
+        "/api/v1/resumes", files={"file": ("student.docx", docx_bytes(), "application/octet-stream")}
+    ).json()
+    job = create_job(client)
+    endpoint = f"/api/v1/job-descriptions/{job['id']}/analyze"
+    result = client.post(endpoint, json={"method": "catalogue", "resume_id": upload["id"]})
+    assert result.status_code == 200, result.text
+    compared = result.json()
+    assert compared["resume_id"] == upload["id"]
+    assert {match["skill_id"] for match in compared["analysis"]["resume_skills"]} >= {
+        "java-types",
+        "sql-joins",
+    }
+    assert all(skill["score"] is None for skill in client.get("/api/v1/skills").json())
+    assert client.post(endpoint, json={"method": "catalogue"}).json()["analysis"] == compared["analysis"]
+    assert client.get("/api/v1/job-descriptions").json()[0]["analysis"] == compared["analysis"]
+    detached = client.post(endpoint, json={"method": "catalogue", "resume_id": None}).json()
+    assert detached["resume_id"] is None and detached["analysis"]["resume_skills"] == []
+    with TestClient(client.app) as other:
+        register(other)
+        others_job = create_job(other)
+        assert (
+            other.post(
+                f"/api/v1/job-descriptions/{others_job['id']}/analyze",
+                json={"method": "catalogue", "resume_id": upload["id"]},
+            ).status_code
+            == 404
+        )
+    assert client.delete(f"/api/v1/resumes/{upload['id']}").status_code == 200
+
+
+def test_unsupported_job_is_an_empty_comparison_not_a_provider_error(client):
+    job = client.post(
+        "/api/v1/job-descriptions",
+        json={
+            "title": "Visual Designer",
+            "raw_text": "Create illustrations, brand identities and print layouts using Figma.",
+        },
+    ).json()
+    result = client.post(f"/api/v1/job-descriptions/{job['id']}/analyze", json={"method": "catalogue"})
+    assert result.status_code == 200
+    assert result.json()["analysis"]["required_skills"] == []
+    assert client.post(f"/api/v1/job-descriptions/{job['id']}/target").status_code == 409
+
+
+def test_catalogue_matches_exact_source_without_javascript_or_negative_claims():
+    from app.skill_matching import compare_documents
+
+    job = "Use JavaScript for web interfaces. SQL joins are optional. Java and HTTP are required."
+    resume = "I have no Java experience. Implemented an HTTP client in JavaScript."
+    result = compare_documents(job, resume, {"java-types", "sql-joins", "net-http"})
+    assert {match.skill_id for match in result.required_skills} == {"java-types", "net-http"}
+    assert {match.skill_id for match in result.resume_skills} == {"net-http"}
+    assert all(match.evidence in job for match in result.required_skills)
+    assert all(match.evidence in resume for match in result.resume_skills)
+
+
+def test_ai_configuration_status_and_contact_safe_capabilities(client):
+    settings = Settings(_env_file=None, openrouter_api_key="  ", openrouter_model=" test/model ")
+    assert not settings.ai_enabled and settings.ai_status == "missing_key"
+    settings = Settings(_env_file=None, openrouter_api_key=" test-only ", openrouter_model=" ")
+    assert not settings.ai_enabled and settings.ai_status == "missing_model"
+    response = client.get("/api/v1/capabilities").json()
+    assert response["ai_status"] == "missing_key" and not response["ai_enabled"]
+    assert "openrouter_api_key" not in response
 
 
 class ExtractionAI:
@@ -117,6 +195,22 @@ def test_verified_job_requirements_change_plan_priority(client, application):
     first_sql_after = next(i for i, t in enumerate(plan["tasks"]) if t["skill_id"] == "sql-select")
     assert first_sql_after < first_sql_before
     assert client.post(f"/api/v1/job-descriptions/{job['id']}/target").json()["version"] == plan["version"]
+
+
+def test_ai_upgrade_refreshes_an_already_targeted_catalogue_plan(client, application):
+    complete(client, application, correct=False)
+    job = create_job(client)
+    endpoint = f"/api/v1/job-descriptions/{job['id']}/analyze"
+    assert client.post(endpoint, json={"method": "catalogue"}).status_code == 200
+    before = client.post(f"/api/v1/job-descriptions/{job['id']}/target").json()
+    application.state.settings.openrouter_api_key = "test-only"
+    application.state.settings.openrouter_model = "test/model"
+    application.state.llm = ExtractionAI()
+    assert client.post(endpoint, json={"method": "ai"}).json()["analysis"]["method"] == "ai"
+    after = client.get("/api/v1/roadmaps/current").json()
+    assert after["version"] == before["version"] + 1
+    assert client.post(endpoint, json={"method": "ai"}).status_code == 200
+    assert client.get("/api/v1/roadmaps/current").json()["version"] == after["version"]
 
 
 def test_semantically_false_ai_evidence_is_rejected(client, application):
@@ -204,3 +298,18 @@ def test_llm_validates_schema_and_sends_privacy_requirements():
     )
     result, usage = client.structured(InterviewFeedback, "test instruction", {})
     assert result.correctness == 2 and usage["prompt_tokens"] == 40
+
+
+@pytest.mark.parametrize("status,phrase", [(401, "credentials"), (402, "credits"), (404, "model")])
+def test_llm_reports_actionable_configuration_failures_without_provider_body(status, phrase):
+    def handler(request):
+        return httpx.Response(status, json={"error": {"message": "private provider detail"}})
+
+    client = LLMClient(
+        Settings(_env_file=None, openrouter_api_key="test-only", openrouter_model="test/model"),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(AIUnavailable) as error:
+        client.structured(SkillExtraction, "instruction", {})
+    assert phrase in str(error.value)
+    assert "private provider detail" not in str(error.value)

@@ -57,6 +57,18 @@ class LLMClient:
                         json=payload,
                         headers={"Authorization": f"Bearer {self.settings.openrouter_api_key}"},
                     )
+                    if response.status_code in {401, 403}:
+                        raise AIUnavailable(
+                            "The AI provider rejected the server credentials. Ask the administrator to check the OpenRouter key and permissions."
+                        )
+                    if response.status_code == 402:
+                        raise AIUnavailable(
+                            "The AI provider has no available credits. Ask the administrator to check the account balance or spending limit."
+                        )
+                    if response.status_code in {400, 404, 422}:
+                        raise AIUnavailable(
+                            "The configured AI model could not serve this request. Ask the administrator to check the model ID, structured-output support and privacy-compatible provider availability."
+                        )
                     if response.status_code == 429 or response.status_code >= 500:
                         if attempt == 0:
                             # Do not immediately retry an explicit long provider cooldown.

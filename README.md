@@ -8,7 +8,7 @@ The MVP starts with **Java Developer**, **12 topics across six subjects**, **48 
 
 Register, save a deadline/timezone/daily budget, take a timed diagnostic, receive a prerequisite-aware plan, use its learning resources, take a fresh milestone assessment, and see a versioned plan update. Answers survive reloads; submission is server-scored and idempotent. Completed work survives schedule changes, and insufficient time produces explicit unscheduled work.
 
-Students can bookmark resources, privately upload/delete PDF or DOCX resumes, save job descriptions, request evidence-backed skill mapping, and apply a job's requirements to plan priorities. Text interviews store turns, avoid recent questions, support AI follow-ups and rubric feedback, and remain usable as unscored practice without AI credentials. The dashboard shows real stored progress and evidence coverage.
+Students can bookmark resources, privately upload/delete PDF or DOCX resumes, and save job descriptions. Saving a job immediately compares explicit terms against the Java Developer catalogue without AI. Each comparison shows source quotes, its method and separate assessment evidence. Students can change the attached resume, optionally request AI analysis, and apply matching job requirements to plan priorities. Text interviews store turns, avoid recent questions, support AI follow-ups and rubric feedback, and remain usable as unscored practice without AI credentials. The dashboard shows real stored progress and evidence coverage.
 
 ## Stack
 
@@ -16,7 +16,7 @@ React 19, TypeScript, Vite, Tailwind, React Router; Python FastAPI/Pydantic; SQL
 
 ## Docker start
 
-With Docker and Compose installed, run from the repository root:
+With Docker and Compose 2.24+ installed, run from the repository root:
 
 ```bash
 docker compose up --build
@@ -77,7 +77,9 @@ For an explicit local smoke run without PostgreSQL, create `backend/.data/` and 
 
 ## Optional AI
 
-Set backend environment variables and restart the API:
+Resume/job comparison works without a model using explicitly labelled catalogue term matching. It covers the starter Java Developer topics, can miss wording/context, and does not produce an ATS or proficiency score. AI enhancement requires your own provider configuration.
+
+Copy `backend/.env.example` to `backend/.env` if needed, then set these values there:
 
 ```dotenv
 OPENROUTER_API_KEY=your-own-key
@@ -85,6 +87,15 @@ OPENROUTER_MODEL=an-explicit-compatible-model-id
 OPENROUTER_REQUIRE_ZDR=true
 AI_REQUESTS_PER_DAY=20
 ```
+
+Docker Compose now reads `backend/.env` for both `api` and `migrate`. An optional repository-root `.env` is read afterwards and overrides duplicate settings, so remove stale blank AI values there. The container database/origin settings remain set by Compose. After changing configuration, recreate the API:
+
+```bash
+docker compose up -d --force-recreate api
+curl http://localhost:8000/api/v1/capabilities
+```
+
+`ai_status` is `missing_key`, `missing_model` or `ready`. `ready` means both settings are present, not that a live provider request has succeeded. Secrets are never returned by that endpoint. Native development reads `backend/.env` when the API runs from the backend directory.
 
 Choose a model/provider endpoint supporting JSON Schema output and the required privacy policy. No free model is hardcoded. Requests require parameter support, disallow data collection and default to zero-retention routing. If no compatible endpoint is available, analysis reports unavailable; privacy rules are not silently relaxed and paid fallbacks are not automatically selected.
 

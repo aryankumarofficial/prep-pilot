@@ -14,6 +14,29 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Verify optional AI configuration reaches both containers
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import subprocess
+          backend = Path('backend/.env')
+          root = Path('.env')
+          try:
+              backend.write_text('OPENROUTER_API_KEY=ci-config-only\nOPENROUTER_MODEL=ci/backend-model\nAI_REQUESTS_PER_DAY=7\n')
+              root.write_text('OPENROUTER_MODEL=ci/root-model\n')
+              config = json.loads(subprocess.check_output(['docker', 'compose', 'config', '--format', 'json'], text=True))
+              for name in ['api', 'migrate']:
+                  env = config['services'][name]['environment']
+                  assert env['OPENROUTER_API_KEY'] == 'ci-config-only'
+                  assert env['OPENROUTER_MODEL'] == 'ci/root-model'
+                  assert env['AI_REQUESTS_PER_DAY'] == '7'
+                  assert '@db:5432/' in env['DATABASE_URL']
+              print('AI settings forwarded; root overrides backend; container database address preserved.')
+          finally:
+              backend.unlink(missing_ok=True)
+              root.unlink(missing_ok=True)
+          PY
       - name: Build application containers
         run: docker compose build
       - name: Start database, migrations and application
