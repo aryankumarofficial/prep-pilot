@@ -10,6 +10,8 @@ Roadmaps separate stable tasks from per-version schedules. Completion survives n
 
 The LLM has no tools, database connection or authority to alter state. Structured outputs are shape-validated and source snippets/skill IDs are checked separately. Contact data is minimized before transmission. Scored test questions use the stored starter bank, never live generated answer keys.
 
+Resume/JD comparisons also support a deterministic catalogue matcher. It matches explicit bounded terms, excludes simple negative/optional clauses, and stores exact source excerpts with `method=catalogue`. These mentions are not proficiency evidence. Optional AI comparisons store `method=ai`; provider failures leave a previous comparison intact. Changing a saved comparison's resume is ownership-checked and recomputes its evidence. Changed requirements on an active target refresh the roadmap transactionally.
+
 Resumes use private files and bounded extraction with a minimal subprocess environment. Deletion clears the source and derived analysis. Retention requires the documented maintenance job. Interview/JD lifecycle and backup retention remain public-pilot tasks.
 
 Unavailable AI is explicit. Question practice and transcripts still work; only evaluated turns contribute to an approximate coaching score. No evaluated turns means no score.

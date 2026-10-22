@@ -1,7 +1,7 @@
 import { ArrowRight, FileText, Sparkles, Trash2, Upload } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { api, errorMessage, post } from "../api";
+import JobComparison from "../components/JobComparison";
 import { useLoad } from "../hooks";
 import type { Capabilities, Job, Resume, Skill } from "../types";
 import {
@@ -16,102 +16,163 @@ import {
 } from "../components/ui";
 
 export default function ResumePage() {
-  const resumes = useLoad<Resume[]>("/resumes"),
-    jobs = useLoad<Job[]>("/job-descriptions");
-  const capabilities = useLoad<Capabilities>("/capabilities"),
-    skills = useLoad<Skill[]>("/skills");
-  const [selected, setSelected] = useState(""),
-    [busy, setBusy] = useState(""),
-    [error, setError] = useState(""),
-    [message, setMessage] = useState("");
-  const job = jobs.data?.find((j) => j.id === selected) ?? jobs.data?.[0];
-  const skillMap = new Map(skills.data?.map((s) => [s.id, s]));
+  const resumes = useLoad<Resume[]>("/resumes");
+  const jobs = useLoad<Job[]>("/job-descriptions");
+  const capabilities = useLoad<Capabilities>("/capabilities");
+  const skills = useLoad<Skill[]>("/skills");
+  const [selected, setSelected] = useState("");
+  const [resumeId, setResumeId] = useState<string | null>(null);
+  const [comparisonResumes, setComparisonResumes] = useState<
+    Record<string, string>
+  >({});
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const job = jobs.data?.find((item) => item.id === selected) ?? jobs.data?.[0];
+
+  function start(action: string) {
+    setBusy(action);
+    setError("");
+    setMessage("");
+  }
+  function updateJob(result: Job) {
+    jobs.setData((previous) => [
+      result,
+      ...(previous ?? []).filter((item) => item.id !== result.id),
+    ]);
+  }
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    setBusy("upload");
-    setError("");
+    start("upload");
     try {
-      await api("/resumes", { method: "POST", body: new FormData(form) });
-      resumes.reload();
+      const resume = await api<Resume>("/resumes", {
+        method: "POST",
+        body: new FormData(form),
+      });
+      resumes.setData((previous) => [resume, ...(previous ?? [])]);
+      setResumeId(resume.id);
       form.reset();
-      setMessage("Resume uploaded and text extracted.");
-    } catch (error) {
-      setError(errorMessage(error));
+      setMessage(
+        "Resume ready. It is selected for your next job comparison, or you can choose it for a saved job below.",
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setBusy("");
     }
   }
   async function saveJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy("job");
-    setError("");
-    const form = new FormData(event.currentTarget);
+    const element = event.currentTarget;
+    const form = new FormData(element);
+    start("job");
+    let saved = false;
     try {
       const result = await post<Job>("/job-descriptions", {
         title: form.get("title"),
         raw_text: form.get("raw_text"),
         resume_id: form.get("resume_id") || null,
       });
+      saved = true;
       setSelected(result.id);
-      jobs.reload();
-      setMessage(
-        "Target job saved. You can now analyze its skill requirements.",
+      updateJob(result);
+      element.reset();
+      const compared = await post<Job>(
+        `/job-descriptions/${result.id}/analyze`,
+        { method: "catalogue" },
       );
-    } catch (error) {
-      setError(errorMessage(error));
+      updateJob(compared);
+      setMessage("Job saved and catalogue comparison ready.");
+    } catch (caught) {
+      setError(
+        `${saved ? "Your job was saved, but comparison failed. Retry using Compare catalogue skills below. " : ""}${errorMessage(caught)}`,
+      );
     } finally {
       setBusy("");
     }
   }
-  async function analyze(id: string) {
-    setBusy("analyze");
-    setError("");
+  async function analyze(
+    id: string,
+    method: "catalogue" | "ai",
+    comparisonResume: string,
+  ) {
+    start(method);
     try {
-      await post(`/job-descriptions/${id}/analyze`);
-      jobs.reload();
-    } catch (error) {
-      setError(errorMessage(error));
+      const result = await post<Job>(`/job-descriptions/${id}/analyze`, {
+        method,
+        resume_id: comparisonResume || null,
+      });
+      updateJob(result);
+      setComparisonResumes((previous) => ({
+        ...previous,
+        [id]: result.resume_id ?? "",
+      }));
+      setMessage(
+        method === "ai"
+          ? "AI comparison ready."
+          : "Catalogue comparison ready.",
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setBusy("");
     }
   }
   async function target(id: string) {
-    setBusy("target");
-    setError("");
+    start("target");
     try {
       await post(`/job-descriptions/${id}/target`);
       setMessage(
         "Your roadmap now prioritizes this target job. Open the roadmap to see the new version.",
       );
-    } catch (error) {
-      setError(errorMessage(error));
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setBusy("");
     }
   }
   async function remove(id: string) {
-    setBusy(id);
-    setError("");
+    start(id);
     try {
       await api(`/resumes/${id}`, { method: "DELETE" });
-      resumes.reload();
-      jobs.reload();
+      resumes.setData((previous) =>
+        previous?.filter((resume) => resume.id !== id),
+      );
+      jobs.setData((previous) =>
+        previous?.map((item) =>
+          item.resume_id === id
+            ? { ...item, resume_id: null, analysis: null }
+            : item,
+        ),
+      );
+      setComparisonResumes((previous) =>
+        Object.fromEntries(
+          Object.entries(previous).filter(([, value]) => value !== id),
+        ),
+      );
+      if (resumeId === id) setResumeId(null);
       setMessage("Resume and its derived analysis deleted.");
-    } catch (error) {
-      setError(errorMessage(error));
+    } catch (caught) {
+      setError(errorMessage(caught));
     } finally {
       setBusy("");
     }
   }
-  if (resumes.loading || jobs.loading) return <Loading />;
-  if (resumes.error || jobs.error)
+  if (
+    (resumes.loading && !resumes.data) ||
+    (jobs.loading && !jobs.data) ||
+    (skills.loading && !skills.data)
+  )
+    return <Loading />;
+  if (resumes.error || jobs.error || skills.error)
     return (
       <ErrorNotice
-        message={resumes.error || jobs.error}
+        message={resumes.error || jobs.error || skills.error}
         retry={() => {
           resumes.reload();
           jobs.reload();
+          skills.reload();
         }}
       />
     );
@@ -121,8 +182,8 @@ export default function ResumePage() {
         eyebrow="CONNECT YOUR STORY TO THE ROLE"
         title="See the fit. Find the next step."
       >
-        Compare written evidence with a target job, alongside your measured
-        assessment results.
+        Upload your resume, paste a job description, and compare it with the
+        Java Developer catalogue.
       </PageHeader>
       {error ? <ErrorNotice message={error} /> : null}
       {message ? (
@@ -130,18 +191,31 @@ export default function ResumePage() {
           {message}
         </p>
       ) : null}
-      {!capabilities.data?.ai_enabled ? (
+      <Notice>
+        Catalogue comparison works on this server without AI. It identifies
+        explicit document mentions across 12 Java Developer topics; it does not
+        measure proficiency.
+      </Notice>
+      {capabilities.error ? (
+        <ErrorNotice message={capabilities.error} retry={capabilities.reload} />
+      ) : null}
+      {capabilities.data?.ai_enabled ? (
         <Notice>
-          AI analysis is awaiting server configuration. You can upload your
-          resume, save a job, and continue using assessments and roadmaps.
+          Optional AI analysis sends relevant text to the configured provider
+          only when you choose Analyze with AI. Contact details are removed
+          automatically; omit other personal information that is not needed.
         </Notice>
-      ) : (
+      ) : capabilities.data ? (
         <Notice>
-          AI analysis sends relevant text to the configured model provider.
-          Contact details are removed automatically; omit other personal
-          information that is not needed.
+          {capabilities.data.ai_status === "missing_model"
+            ? "AI enhancement needs a model configured by the server administrator. "
+            : "AI enhancement has not been enabled on this server. "}
+          Standard comparison remains available.
+          <Button variant="ghost" onClick={capabilities.reload}>
+            Check AI availability
+          </Button>
         </Notice>
-      )}
+      ) : null}
       <div className="two-columns resume-inputs">
         <Panel>
           <div className="section-heading">
@@ -156,7 +230,8 @@ export default function ResumePage() {
               <Upload size={26} />
               <strong>Choose your resume</strong>
               <span>
-                PDF or DOCX · up to 5 MB · text-based PDF, up to 10 pages
+                PDF or DOCX · up to {capabilities.data?.max_upload_mb ?? 5} MB ·
+                text-based PDF, up to 10 pages
               </span>
               <input
                 type="file"
@@ -188,7 +263,7 @@ export default function ResumePage() {
                   <strong>{resume.filename}</strong>
                   <small>
                     {formatDate(resume.created_at)} ·{" "}
-                    {resume.characters.toLocaleString()} characters
+                    {resume.characters.toLocaleString()} characters extracted
                   </small>
                 </span>
                 <button
@@ -237,20 +312,21 @@ export default function ResumePage() {
             </label>
             <label>
               Compare with resume
-              <select name="resume_id">
-                <option value="">
-                  No resume · extract job requirements only
-                </option>
-                {resumes.data?.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.filename}
+              <select
+                name="resume_id"
+                value={resumeId ?? resumes.data?.[0]?.id ?? ""}
+                onChange={(event) => setResumeId(event.target.value)}
+              >
+                <option value="">No resume · job requirements only</option>
+                {resumes.data?.map((resume) => (
+                  <option key={resume.id} value={resume.id}>
+                    {resume.filename}
                   </option>
                 ))}
               </select>
             </label>
             <Button type="submit" busy={busy === "job"} disabled={!!busy}>
-              Save target job
-              <ArrowRight size={16} />
+              Save & compare <ArrowRight size={16} />
             </Button>
           </form>
         </Panel>
@@ -266,11 +342,12 @@ export default function ResumePage() {
               <span className="sr-only">Saved job</span>
               <select
                 value={job?.id ?? ""}
-                onChange={(e) => setSelected(e.target.value)}
+                disabled={!!busy}
+                onChange={(event) => setSelected(event.target.value)}
               >
-                {jobs.data.map((j) => (
-                  <option key={j.id} value={j.id}>
-                    {j.title}
+                {jobs.data.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.title}
                   </option>
                 ))}
               </select>
@@ -278,100 +355,34 @@ export default function ResumePage() {
           ) : null}
         </div>
         {job ? (
-          <>
-            <div className="section-heading">
-              <div>
-                <h3>{job.title}</h3>
-                <p className="small muted">
-                  {job.resume_id
-                    ? "Resume evidence and role requirements"
-                    : "Role requirements · no resume selected"}
-                </p>
-              </div>
-              {!job.analysis ? (
-                <Button
-                  busy={busy === "analyze"}
-                  disabled={!!busy || !capabilities.data?.ai_enabled}
-                  onClick={() => {
-                    void analyze(job.id);
-                  }}
-                >
-                  <Sparkles size={16} />
-                  Analyze skills
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  busy={busy === "target"}
-                  disabled={!!busy}
-                  onClick={() => {
-                    void target(job.id);
-                  }}
-                >
-                  Use for my roadmap
-                  <ArrowRight size={15} />
-                </Button>
-              )}
-            </div>
-            {job.analysis ? (
-              <>
-                <div className="gap-list">
-                  {job.analysis.required_skills.map((match) => {
-                    const resumeMatch = job.analysis?.resume_skills.find(
-                      (s) => s.skill_id === match.skill_id,
-                    );
-                    const measured = skillMap.get(match.skill_id);
-                    return (
-                      <div key={match.skill_id} className="gap-row">
-                        <div>
-                          <h3>{measured?.name ?? match.skill_id}</h3>
-                          <p className="small muted">
-                            Job evidence: “{match.evidence}”
-                          </p>
-                          {resumeMatch ? (
-                            <p className="small">
-                              Resume evidence: “{resumeMatch.evidence}”
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="gap-status">
-                          <span
-                            className={`pill ${resumeMatch ? "" : "amber"}`}
-                          >
-                            {resumeMatch
-                              ? "Resume evidence found"
-                              : "Missing resume evidence"}
-                          </span>
-                          <span className="small muted">
-                            Test score:{" "}
-                            {measured?.score == null
-                              ? "Not assessed"
-                              : `${measured.score}%`}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p className="small muted">
-                  A missing resume mention does not establish a skill weakness.
-                  Assessment results provide separate evidence.
-                </p>
-                <Link to="/roadmap" className="text-link">
-                  Open my roadmap
-                  <ArrowRight size={15} />
-                </Link>
-              </>
-            ) : (
-              <p className="muted">
-                Your job is saved. Run analysis when AI is available to identify
-                supported catalogue skills.
-              </p>
-            )}
-          </>
+          <JobComparison
+            job={job}
+            resumes={resumes.data ?? []}
+            skills={skills.data ?? []}
+            resumeId={comparisonResumes[job.id] ?? job.resume_id ?? ""}
+            aiEnabled={!!capabilities.data?.ai_enabled}
+            busy={busy}
+            onResumeChange={(id) =>
+              setComparisonResumes((previous) => ({
+                ...previous,
+                [job.id]: id,
+              }))
+            }
+            onAnalyze={(method) => {
+              void analyze(
+                job.id,
+                method,
+                comparisonResumes[job.id] ?? job.resume_id ?? "",
+              );
+            }}
+            onTarget={() => {
+              void target(job.id);
+            }}
+          />
         ) : (
           <Empty title="A role gives your preparation context">
-            Save a job description above. Your analysis will appear here.
+            Save a job description above. Your comparison will appear here
+            automatically.
           </Empty>
         )}
       </Panel>

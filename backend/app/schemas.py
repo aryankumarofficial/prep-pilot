@@ -71,6 +71,11 @@ class JobInput(Input):
     resume_id: UUID | None = None
 
 
+class JobAnalysisInput(Input):
+    method: Literal["auto", "catalogue", "ai"] = "auto"
+    resume_id: UUID | None = None
+
+
 class InterviewInput(Input):
     job_description_id: UUID | None = None
 

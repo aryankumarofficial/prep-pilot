@@ -31,6 +31,8 @@ def profile(user):
 def capabilities(request: Request):
     return {
         "ai_enabled": request.app.state.settings.ai_enabled,
+        "ai_status": request.app.state.settings.ai_status,
+        "max_upload_mb": request.app.state.settings.max_upload_mb,
         "roles": ["Java Developer"],
         "resume_retention_days": request.app.state.settings.resume_retention_days,
         "starter_bank": True,

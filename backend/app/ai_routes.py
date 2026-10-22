@@ -13,8 +13,16 @@ from .evidence import skill_summary
 from .llm import AIUnavailable, redact_contacts
 from .models import Interview, InterviewTurn, JobDescription, LLMRun, Resume, Roadmap, Skill, User
 from .roadmaps import make_plan, plan_payload
-from .schemas import InterviewAnswer, InterviewFeedback, InterviewInput, JobInput, SkillExtraction
+from .schemas import (
+    InterviewAnswer,
+    InterviewFeedback,
+    InterviewInput,
+    JobAnalysisInput,
+    JobInput,
+    SkillExtraction,
+)
 from .security import DB, Student, owned, rate_limit
+from .skill_matching import compare_documents
 
 router = APIRouter(prefix="/api/v1", tags=["Resume and interviews"])
 
@@ -22,7 +30,9 @@ router = APIRouter(prefix="/api/v1", tags=["Resume and interviews"])
 def run_ai(request, db, user, purpose, schema, instruction, data):
     settings = request.app.state.settings
     if not settings.ai_enabled:
-        raise AIUnavailable("AI analysis is not configured yet. Core tests and study plans remain available.")
+        raise AIUnavailable(
+            "AI enhancement is not configured on this server. Catalogue comparison remains available."
+        )
     rate_limit(request, "ai", user.id, settings.ai_requests_per_day, 86400)
     run = LLMRun(user_id=user.id, purpose=purpose, model=settings.openrouter_model, status="unavailable")
     try:
@@ -116,6 +126,7 @@ def upload(file: UploadFile, request: Request, db: DB, user: Student):
 
 @router.delete("/resumes/{resume_id}")
 def delete_resume(resume_id: str, request: Request, db: DB, user: Student):
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
     row = owned(db, Resume, resume_id, user)
     # Delete derived resume analysis as well; it may contain source snippets.
     for job in db.scalars(select(JobDescription).where(JobDescription.resume_id == row.id)):
@@ -166,23 +177,35 @@ def add_job(payload: JobInput, db: DB, user: Student):
 
 
 @router.post("/job-descriptions/{job_id}/analyze")
-def analyze(job_id: str, request: Request, db: DB, user: Student):
+def analyze(job_id: str, request: Request, db: DB, user: Student, payload: JobAnalysisInput | None = None):
+    payload = payload or JobAnalysisInput()
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
     row = owned(db, JobDescription, job_id, user, lock=True)
-    if row.analysis:
+    resume_id = row.resume_id
+    if "resume_id" in payload.model_fields_set:
+        resume_id = str(payload.resume_id) if payload.resume_id else None
+    resume = owned(db, Resume, resume_id, user) if resume_id else None
+    method = payload.method
+    if method == "auto":
+        method = "ai" if request.app.state.settings.ai_enabled else "catalogue"
+    if row.analysis and row.analysis.get("method", "ai") == method and resume_id == row.resume_id:
         return job_info(row)
-    resume = owned(db, Resume, row.resume_id, user) if row.resume_id else None
     catalogue = [{"id": s.id, "name": s.name} for s in db.scalars(select(Skill))]
     jd_text = redact_contacts(row.raw_text)
     resume_text = redact_contacts(resume.extracted_text) if resume else ""
     try:
-        extraction = run_ai(
-            request,
-            db,
-            user,
-            "skill_extraction",
-            SkillExtraction,
-            "Identify skills explicitly supported by source text. Use only catalogue IDs. Evidence must be an exact quote from the corresponding source. Absence is missing resume evidence, not proof of inability. Include only required catalogue skills. An empty resume must produce no resume_skills.",
-            {"catalogue": catalogue, "job_description": jd_text, "resume": resume_text},
+        extraction = (
+            compare_documents(jd_text, resume_text, {s["id"] for s in catalogue})
+            if method == "catalogue"
+            else run_ai(
+                request,
+                db,
+                user,
+                "skill_extraction",
+                SkillExtraction,
+                "Identify skills explicitly supported by source text. Use only catalogue IDs. Evidence must be an exact quote from the corresponding source. Absence is missing resume evidence, not proof of inability. Include only required catalogue skills. An empty resume must produce no resume_skills.",
+                {"catalogue": catalogue, "job_description": jd_text, "resume": resume_text},
+            )
         )
         allowed = {s["id"] for s in catalogue}
         for matches, source in [
@@ -196,10 +219,23 @@ def analyze(job_id: str, request: Request, db: DB, user: Student):
                         "The extracted evidence could not be verified. Please retry the analysis."
                     )
                 seen.add(match.skill_id)
-        if not extraction.required_skills:
-            raise AIUnavailable("No supported catalogue skills were identified in this job description.")
-        row.analysis = extraction.model_dump()
+        previous_requirements = {
+            match["skill_id"] for match in (row.analysis or {}).get("required_skills", [])
+        }
+        row.resume_id = resume_id
+        row.analysis = {**extraction.model_dump(), "method": method, "analyzed_at": utcnow().isoformat()}
         db.flush()
+        roadmap = db.scalar(select(Roadmap).where(Roadmap.user_id == user.id))
+        requirements = {match.skill_id for match in extraction.required_skills}
+        if roadmap and roadmap.job_description_id == row.id and requirements != previous_requirements:
+            if not requirements:
+                roadmap.job_description_id = None
+            make_plan(
+                db,
+                user,
+                f"job-analysis:{row.id}:{uid()}",
+                "Target job comparison updated. Completed tasks were preserved.",
+            )
         return job_info(row)
     except AIUnavailable as error:
         db.commit()  # Persist non-sensitive usage metadata even when the provider is unavailable.
@@ -210,8 +246,10 @@ def analyze(job_id: str, request: Request, db: DB, user: Student):
 def target_job(job_id: str, db: DB, user: Student):
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     job = owned(db, JobDescription, job_id, user)
-    if not job.analysis:
-        raise HTTPException(409, "Analyze this job's requirements before using it for your roadmap.")
+    if not job.analysis or not job.analysis.get("required_skills"):
+        raise HTTPException(
+            409, "Compare a job with matching catalogue skills before using it for your roadmap."
+        )
     roadmap = db.scalar(select(Roadmap).where(Roadmap.user_id == user.id))
     if not roadmap:
         raise HTTPException(409, "Complete your diagnostic first, then apply this target to your study plan.")

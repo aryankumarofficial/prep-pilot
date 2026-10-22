@@ -93,6 +93,92 @@ test("a student can assess, plan, revisit saved progress and practice an intervi
       name: "Remove bookmark for Java language basics",
     }),
   ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("link", { name: "Resume & role", exact: true }).click();
+  await page.getByLabel("Choose resume file").setInputFiles({
+    name: "student.docx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    // Synthetic DOCX containing Java, SQL joins and an object-oriented project.
+    buffer: Buffer.from(
+      "UEsDBBQAAAAIAGh4Vl1Tgq98uAAAAAIBAAARAAAAd29yZC9kb2N1bWVudC54bWxFjzFuwzAMRa9CZG8UdOgguN5bdAlyAlpSbQWiKFB01dy+kjN0eQRB8v/PqVnPbqeQFX4p5Wrb+2lTLdaY6rZAWM9cQu6zbxZC7a2sprH4IuxCrTGvlMzr5fJmCGM+zVOzC/vHqGVABnS+6e6HSz+7B6cWPvEHAbOH2/UL7hxzPcMHlRRGmOABIcVFUB7gUDHxugdoUTfgZQi8sMTnYldcBYl6kkNPQ+0xJzNcB+VgOfhMZv6/nv8AUEsBAhQDFAAAAAgAaHhWXVOCr3y4AAAAAgEAABEAAAAAAAAAAAAAAIABAAAAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAABAAEAPwAAAOcAAAAAAA==",
+      "base64",
+    ),
+  });
+  await page.getByRole("button", { name: "Upload & extract text" }).click();
+  await expect(page.getByLabel("Compare with resume")).not.toHaveValue("");
+  await page
+    .getByLabel("Job title", { exact: true })
+    .fill("Demo Java Developer");
+  await page
+    .getByLabel("Job description", { exact: true })
+    .fill(
+      "We require Java, object-oriented programming, SQL joins and HTTP for building backend services.",
+    );
+  await page
+    .getByRole("button", { name: "Save & compare", exact: true })
+    .click();
+  await expect(
+    page.getByText("Job saved and catalogue comparison ready."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Resume mention found", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Not mentioned in resume", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Analyze with AI" }),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByText("Resume mention found", { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByLabel("Resume for this comparison").selectOption("");
+  await page.getByRole("button", { name: "Update comparison" }).click();
+  await expect(
+    page.getByText("No resume selected", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Not mentioned in resume", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByLabel("Resume for this comparison")
+    .selectOption({ label: "student.docx" });
+  await page.getByRole("button", { name: "Update comparison" }).click();
+  await expect(
+    page.getByText("Resume mention found", { exact: true }).first(),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "test-results/resume-comparison-desktop.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Use for my roadmap" }).click();
+  await expect(
+    page.getByText(/Your roadmap now prioritizes this target job/),
+  ).toBeVisible();
+  await page
+    .getByRole("link", { name: "Open my roadmap", exact: true })
+    .click();
+  await expect(
+    page.getByText("Target job: Demo Java Developer", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: completedLabel, exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Resume & role", exact: true }).click();
+  await page.getByRole("button", { name: "Delete student.docx" }).click();
+  await expect(
+    page.getByText("Resume and its derived analysis deleted."),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Resume mention found", { exact: true }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Compare catalogue skills", exact: true })
+    .click();
+  await expect(
+    page.getByText("No resume selected", { exact: true }).first(),
+  ).toBeVisible();
   await page.getByRole("link", { name: "Interview studio" }).click();
   await page.getByRole("button", { name: "Start or resume a session" }).click();
   await page
@@ -138,6 +224,21 @@ test("a student can assess, plan, revisit saved progress and practice an intervi
   ).toBe(true);
   await page.screenshot({
     path: "test-results/roadmap-mobile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("link", { name: "Resume & role", exact: true }).click();
+  await expect(page.locator("#navigation")).not.toBeInViewport();
+  await expect(
+    page.getByText("No resume selected", { exact: true }).first(),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-results/resume-comparison-mobile.png",
     fullPage: true,
   });
   expect(consoleErrors).toEqual([]);
